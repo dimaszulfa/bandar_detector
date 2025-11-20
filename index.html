@@ -186,6 +186,13 @@ Paste broker summary (<code>Time Stock Brd Price Qty BT BC SC ST</code>) → kli
 </div>
 
 <h3 style="margin-top:20px;">📜 Detail Transaksi</h3>
+<div class="filters" style="margin-bottom:10px;background:#020617;border-radius:8px;padding:10px;border:1px solid #1f2937;">
+  <span style="color:#bfdbfe;">Filters:</span><br>
+  Lot: <input type="text" id="lotFilter" placeholder="e.g. >1000" style="margin:5px; background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:4px;padding:4px;width:120px;">
+  BC/SC: <input type="text" id="brokerFilter" placeholder="Broker code" style="margin:5px; background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:4px;padding:4px;width:120px;">
+  Time: <input type="text" id="timeFilter" placeholder="HH:MM:SS - HH:MM:SS" style="margin:5px; background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:4px;padding:4px;width:180px;">
+  <button id="applyFilter" style="margin:5px; background:#3b82f6;color:#f9fafb;border:1px solid #3b82f6;border-radius:4px;padding:4px 8px;">Apply</button>
+</div>
 <div style="max-height:420px;overflow:auto;border-radius:12px;border:1px solid #1f2937;background:#020617;">
 <table id="resultTable">
     <thead>
@@ -217,6 +224,7 @@ let chartDomObj  = null;
 let globalTimeStats = null;
 let globalBrokerSummary = null;
 let summaryMode = "gross";
+let globalRows = null;
 
 let selectionTimer = null;
 let isMouseDown = false;
@@ -278,6 +286,10 @@ document.addEventListener("mouseup", function() {
     }
 });
 
+document.getElementById("applyFilter").addEventListener("click", function() {
+    renderTable();
+});
+
 // ===== PARSE CLIPBOARD =====
 function processData(rawText) {
     const lines = rawText.split("\n").filter(l => l.trim() !== "");
@@ -321,7 +333,8 @@ function processData(rawText) {
     globalTimeStats = buildTimeStats(rows);
     globalBrokerSummary = buildBrokerSummary(rows);
 
-    renderTable(rows);
+    globalRows = rows;
+    renderTable();
     renderTimeChart(rows);
     renderDominantBrokerChart(rows);
     renderBrokerSummary(globalBrokerSummary);
@@ -523,24 +536,57 @@ function renderBrokerSummary(list){
 }
 
 // ===== DETAIL TRANSAKSI + MERGE GROUP VALUE + DRAG SELECT =====
-function renderTable(rows) {
+function renderTable(data = globalRows) {
+    if (!data) return;
     const tbody = document.querySelector("#resultTable tbody");
     tbody.innerHTML = "";
 
+    // Apply filters
+    let filtered = data.slice();
+    const lotVal = document.getElementById('lotFilter').value.trim();
+    let minLot = null;
+    if (lotVal.startsWith('>')) minLot = parseInt(lotVal.slice(1));
+    if (minLot !== null) filtered = filtered.filter(r => r.qty >= minLot);
+
+    const brokerVal = document.getElementById('brokerFilter').value.trim().toUpperCase();
+    if (brokerVal) filtered = filtered.filter(r => r.BC.toUpperCase().includes(brokerVal) || r.SC.toUpperCase().includes(brokerVal));
+
+    const timeVal = document.getElementById('timeFilter').value.trim();
+    let startTime = null, endTime = null;
+    if (timeVal) {
+        const parts = timeVal.split('-').map(s => s.trim());
+        if (parts.length > 1) {
+            startTime = parts[0];
+            endTime = parts[1];
+        }
+    }
+    if (startTime && endTime) {
+        filtered = filtered.filter(r => {
+            const rSec = timeToSec(r.time);
+            return rSec >= timeToSec(startTime) && rSec <= timeToSec(endTime);
+        });
+    }
+
+    // Group by time
     const byTime = {};
-    rows.forEach(r => {
+    filtered.forEach(r => {
         if (!byTime[r.time]) byTime[r.time] = [];
         byTime[r.time].push(r);
     });
 
     let totalLot = 0;
     let totalVal = 0;
+    filtered.forEach(r => {
+        const value = r.qty * r.price * 100;
+        totalLot += r.qty;
+        totalVal += value;
+    });
 
     Object.keys(byTime).forEach(time => {
         const group = byTime[time];
         const rowspan = group.length;
 
-        const gv = formatMillion(group[0].groupValue);
+        const gv = formatIdr(group[0].groupValue);
         const gt = group[0].groupTag;
 
         group.forEach((r, idx) => {
@@ -551,9 +597,6 @@ function renderTable(rows) {
             else if (r.haki) tr.classList.add("haki");
 
             const value = r.qty * r.price * 100;
-
-            totalLot += r.qty;
-            totalVal += value;
 
             tr.dataset.qty = r.qty;
             tr.dataset.value = value;
@@ -599,7 +642,7 @@ function renderTable(rows) {
                 <td>${r.stock}</td>
                 <td>${r.price}</td>
                 <td>${formatNumber(r.qty)}</td>
-                <td>${formatMillion(value)}</td>
+                <td>${formatIdr(value)}</td>
             `;
 
             if (idx === 0) {
@@ -630,7 +673,7 @@ function renderTable(rows) {
     trTotal.innerHTML = `
         <td colspan="3"><b>TOTAL</b></td>
         <td><b>${formatNumber(totalLot)}</b></td>
-        <td><b>${formatMillion(totalVal)}</b></td>
+        <td><b>${formatIdr(totalVal)}</b></td>
         <td colspan="6"></td>
     `;
 
@@ -667,7 +710,7 @@ function updateSelectionSummary() {
     summaryBox.innerHTML = `
         <b>Summary Selected Rows</b><br>
         Lot: ${formatNumber(totalLot)}<br>
-        Value: ${formatMillion(totalVal)}<br>
+        Value: ${formatIdr(totalVal)}<br>
         Avg Price: ${avgPrice.toFixed(2)}
     `;
     summaryBox.style.display = "block";
@@ -844,6 +887,11 @@ function formatMillion(v){
     if (v === null || v === undefined) return "-";
     const million = v / 1_000_000;
     return million.toFixed(1) + " M";
+}
+
+function formatIdr(v) {
+    if (v === null || v === undefined) return "-";
+    return Math.round(v).toLocaleString('id-ID') + ' IDR';
 }
 </script>
 
