@@ -585,6 +585,47 @@ function renderDominantBrokerChart(rows) {
     });
 }
 
+// ===== HAKA / HAKI DETECTION =====
+function detectHakaHaki(rows) {
+    if (!Array.isArray(rows)) return;
+    // group rows per time
+    const byTime = {};
+    rows.forEach(r => {
+        if (!byTime[r.time]) byTime[r.time] = [];
+        byTime[r.time].push(r);
+    });
+
+    Object.values(byTime).forEach(group => {
+        // count occurrences per broker on BC and SC
+        const countBC = {};
+        const countSC = {};
+        group.forEach(r => {
+            if (r.BC) countBC[r.BC] = (countBC[r.BC] || 0) + 1;
+            if (r.SC) countSC[r.SC] = (countSC[r.SC] || 0) + 1;
+        });
+
+        // brokers present on both sides in this second
+        const bcBrokers = new Set(Object.keys(countBC));
+        const scBrokers = new Set(Object.keys(countSC));
+        const crossBrokers = new Set([...bcBrokers].filter(b => scBrokers.has(b)));
+
+        group.forEach(r => {
+            const isHaka = !!(r.BC && countBC[r.BC] > 1);
+            const isHaki = !!(r.SC && countSC[r.SC] > 1);
+            const isCross = crossBrokers.size > 0 && (crossBrokers.has(r.BC) || crossBrokers.has(r.SC));
+
+            r.haka = isHaka;
+            r.haki = isHaki;
+            r.cross = isCross;
+
+            if (isCross) r.tag = "Cross / Haka-Haki";
+            else if (isHaka) r.tag = "Haka (Buy cluster)";
+            else if (isHaki) r.tag = "Haki (Sell cluster)";
+            else r.tag = "-";
+        });
+    });
+}
+
 // ===== HELPERS =====
 function timeToSec(t) {
     const [h,m,s] = t.split(":").map(Number);
