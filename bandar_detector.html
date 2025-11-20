@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Bandar Detector – Clipboard + Haka Haki + Summary</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background: #0f172a;
+        color: #e5e7eb;
+    }
+    h2, h3 {
+        margin: 0 0 8px 0;
+    }
+    p {
+        margin-top: 4px;
+        margin-bottom: 12px;
+        color: #cbd5f5;
+    }
+    textarea {
+        width: 100%;
+        height: 140px;
+        padding: 10px;
+        font-size: 13px;
+        border-radius: 8px;
+        border: 1px solid #1f2937;
+        box-sizing: border-box;
+        background: #020617;
+        color: #e5e7eb;
+    }
+    textarea:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 1px #3b82f6;
+    }
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 10px;
+        background: #020617;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    th, td {
+        border: 1px solid #111827;
+        padding: 6px;
+        text-align: center;
+        font-size: 11px;
+        color: #e5e7eb;
+    }
+    th {
+        background: #111827;
+        color: #f9fafb;
+        position: sticky;
+        top: 0;
+        z-index: 5;
+    }
+
+    .haka { background: #0b3b6b; }
+    .haki { background: #5a1f2d; }
+    .cross { background: #3b255c; }
+
+    .legend-box {
+        display:inline-block;
+        width:14px;
+        height:14px;
+        margin-right:4px;
+        vertical-align:middle;
+        border-radius: 3px;
+    }
+    .legend-haka { background:#0b3b6b; }
+    .legend-haki { background:#5a1f2d; }
+    .legend-cross{ background:#3b255c; }
+
+    .layout-row {
+        display:flex;
+        gap:20px;
+        align-items:flex-start;
+        margin-top:20px;
+    }
+    .layout-left {
+        flex:2;
+        background:#020617;
+        border-radius:12px;
+        padding:12px;
+        border:1px solid #1f2937;
+    }
+    .layout-right {
+        flex:1;
+        box-sizing:border-box;
+        background:#020617;
+        border-radius:12px;
+        padding:12px;
+        border:1px solid #1f2937;
+    }
+    .layout-right h3,
+    .layout-left h3 {
+        font-size:14px;
+        margin-bottom:6px;
+        color:#bfdbfe;
+    }
+
+    .summary-tabs {
+        margin-bottom:6px;
+    }
+    .summary-tabs button {
+        font-size:11px;
+        padding:4px 10px;
+        margin-right:4px;
+        border-radius:999px;
+        border:1px solid #374151;
+        background:#020617;
+        color:#9ca3af;
+        cursor:pointer;
+    }
+    .summary-tabs button.active {
+        background:#3b82f6;
+        color:#f9fafb;
+        border-color:#3b82f6;
+    }
+
+    tr.selected-row td {
+        background: #78350f !important;
+    }
+
+    #selectionSummary {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        background: rgba(15, 23, 42, 0.95);
+        color: #f9fafb;
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-size: 12px;
+        box-shadow: 0 2px 14px rgba(0,0,0,0.65);
+        display: none;
+        z-index: 999;
+        max-width: 260px;
+        border: 1px solid #4b5563;
+    }
+    #selectionSummary b {
+        font-size: 12px;
+    }
+</style>
+</head>
+<body>
+
+<h2>📈 Bandar Detector – Haka / Haki / Dominant Broker</h2>
+<p>
+Paste broker summary (<code>Time Stock Brd Price Qty BT BC SC ST</code>) → klik textarea → <b>CTRL+V</b>.
+</p>
+
+<textarea id="pasteArea" placeholder="Paste data broker summary di sini..."></textarea>
+
+<div class="layout-row">
+    <div class="layout-left">
+        <h3>📊 Line Chart – Net Volume per Broker + Price</h3>
+        <canvas id="chartBrokerDom" height="160"></canvas>
+    </div>
+    <div class="layout-right">
+        <h3>🧾 Broker Summary (Gross / Net)</h3>
+        <div class="summary-tabs">
+            <button id="tabGross" class="active">Gross</button>
+            <button id="tabNet">Net</button>
+        </div>
+        <table id="summaryTable">
+            <thead>
+                <tr id="summaryHeader"></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<h3 style="margin-top:30px;">📊 Qty per Time + Price</h3>
+<div style="background:#020617;border-radius:12px;padding:12px;border:1px solid #1f2937;">
+    <canvas id="chartTime" height="140"></canvas>
+</div>
+
+<div style="margin-top:20px;background:#020617;border-radius:12px;padding:10px;border:1px solid #1f2937;">
+    <b>Legend warna baris transaksi:</b><br>
+    <span class="legend-box legend-haka"></span>🟦 Haka (Buyer cluster – banyak transaksi broker yang sama di sisi BC dalam 1 detik)<br>
+    <span class="legend-box legend-haki"></span>🟥 Haki (Seller cluster – banyak transaksi broker yang sama di sisi SC dalam 1 detik)<br>
+    <span class="legend-box legend-cross"></span>🟪 Cross / Haka-Haki (broker aktif di sisi BC dan SC dalam detik yang sama)<br>
+</div>
+
+<h3 style="margin-top:20px;">📜 Detail Transaksi</h3>
+<div style="max-height:420px;overflow:auto;border-radius:12px;border:1px solid #1f2937;background:#020617;">
+<table id="resultTable">
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>Stock</th>
+            <th>Price</th>
+            <th>Qty (Lot)</th>
+            <th>Value (IDR)</th>
+            <th>Group Value (Tag)</th>
+            <th>BT</th>
+            <th>BC (Buyer)</th>
+            <th>SC (Seller)</th>
+            <th>ST</th>
+            <th>Tag</th>
+        </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+</div>
+
+<div id="selectionSummary"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+let chartTimeObj = null;
+let chartDomObj  = null;
+let globalTimeStats = null;
+let globalBrokerSummary = null;
+let summaryMode = "gross";
+
+let selectionTimer = null;
+let isMouseDown = false;
+let didDrag = false;
+
+// ===== Broker color map (consistent) =====
+const brokerColors = {};
+const brokerPalette = [
+    "#ef4444", "#22c55e", "#3b82f6", "#a855f7", "#f97316",
+    "#eab308", "#14b8a6", "#f472b6", "#6366f1", "#84cc16",
+    "#0ea5e9", "#fb7185", "#facc15", "#2dd4bf", "#4ade80"
+];
+function getBrokerColor(code) {
+    if (!code) return "";
+    if (brokerColors[code]) return brokerColors[code];
+    const idx = Object.keys(brokerColors).length % brokerPalette.length;
+    brokerColors[code] = brokerPalette[idx];
+    return brokerColors[code];
+}
+
+function getTypeBg(type) {
+    if (!type) return "";
+    if (type === "D") return "#020617";
+    if (type === "F" || type === "A") return "#854d0e"; // kuning kecoklat
+    return "#854d0e";
+}
+
+// ===== PASTE HANDLER =====
+document.getElementById("pasteArea").addEventListener("paste", function() {
+    setTimeout(() => {
+        const raw = this.value.trim();
+        processData(raw);
+    }, 50);
+});
+
+// Tabs gross/net
+document.getElementById("tabGross").addEventListener("click", () => {
+    summaryMode = "gross";
+    setActiveTab();
+    if (globalBrokerSummary) renderBrokerSummary(globalBrokerSummary);
+});
+
+document.getElementById("tabNet").addEventListener("click", () => {
+    summaryMode = "net";
+    setActiveTab();
+    if (globalBrokerSummary) renderBrokerSummary(globalBrokerSummary);
+});
+
+function setActiveTab(){
+    document.getElementById("tabGross").classList.toggle("active", summaryMode==="gross");
+    document.getElementById("tabNet").classList.toggle("active", summaryMode==="net");
+}
+
+// Mouse up global → akhiri drag
+document.addEventListener("mouseup", function() {
+    if (isMouseDown) {
+        isMouseDown = false;
+        scheduleSelectionSummaryUpdate();
+    }
+});
+
+// ===== PARSE CLIPBOARD =====
+function processData(rawText) {
+    const lines = rawText.split("\n").filter(l => l.trim() !== "");
+    const rows = [];
+
+    lines.forEach((line, idx) => {
+        const parts = line.trim().split(/\s+/);
+        if (parts[0] === "Time" || parts.length < 9) return;
+
+        const time  = parts[0];
+        const stock = parts[1];
+        const brd   = parts[2];
+        const price = parseFloat(parts[3].replace(/,/g,"")) || 0;
+        const qty   = parseInt(parts[4].replace(/,/g,"")) || 0;
+        const BT    = parts[5];
+        const BC    = parts[6];
+        const SC    = parts[7];
+        const ST    = parts[8];
+
+        rows.push({
+            idx,
+            time,
+            stock,
+            brd,
+            price,
+            qty,
+            BT,
+            BC,
+            SC,
+            ST,
+            tag: "",
+            haka: false,
+            haki: false,
+            cross: false
+        });
+    });
+
+    if (rows.length === 0) return;
+
+    detectHakaHaki(rows);
+    globalTimeStats = buildTimeStats(rows);
+    globalBrokerSummary = buildBrokerSummary(rows);
+
+    renderTable(rows);
+    renderTimeChart(rows);
+    renderDominantBrokerChart(rows);
+    renderBrokerSummary(globalBrokerSummary);
+    document.getElementById("selectionSummary").style.display = "none";
+}
+
+// ===== DETECT HAKA / HAKI / CROSS & GROUP VALUE =====
+function detectHakaHaki(rows) {
+    const byTime = {};
+    rows.forEach(r => {
+        if (!byTime[r.time]) byTime[r.time] = [];
+        byTime[r.time].push(r);
+    });
+
+    const clusterValue = {};
+    const clusterTag   = {};
+
+    Object.keys(byTime).forEach(time => {
+        const group = byTime[time];
+
+        const totalValue = group.reduce((sum, r) => sum + (r.qty * r.price * 100), 0);
+
+        const countBC = {}, countSC = {};
+        group.forEach(r => {
+            countBC[r.BC] = (countBC[r.BC] || 0) + 1;
+            countSC[r.SC] = (countSC[r.SC] || 0) + 1;
+        });
+
+        let tag = "-";
+        let isHaka = false, isHaki = false, isCross = false;
+
+        Object.keys(countBC).forEach(b => { if (countBC[b] > 1) isHaka = true; });
+        Object.keys(countSC).forEach(b => { if (countSC[b] > 1) isHaki = true; });
+        Object.keys(countBC).forEach(b => { if (countBC[b] && countSC[b]) isCross = true; });
+
+        if (isCross) tag = "Cross / Haka-Haki";
+        else if (isHaka) tag = "Haka (Buy cluster)";
+        else if (isHaki) tag = "Haki (Sell cluster)";
+
+        clusterValue[time] = totalValue;
+        clusterTag[time]   = tag;
+    });
+
+    rows.forEach(r => {
+        r.groupValue = clusterValue[r.time];
+        r.groupTag   = clusterTag[r.time];
+
+        r.cross = r.groupTag.includes("Cross");
+        r.haka  = r.groupTag.includes("Haka (Buy");
+        r.haki  = r.groupTag.includes("Haki (Sell");
+        r.tag   = r.groupTag;
+    });
+}
+
+// ===== TIME STATS UNTUK CHART =====
+function buildTimeStats(rows){
+    const map = {};
+    rows.forEach(r => {
+        if (!map[r.time]) map[r.time] = {qty:0, val:0};
+        map[r.time].qty += r.qty;
+        map[r.time].val += r.qty * r.price * 100;
+    });
+    const times = Object.keys(map).sort((a,b)=>timeToSec(a)-timeToSec(b));
+    const qtys = [];
+    const prices = [];
+    times.forEach(t=>{
+        const q = map[t].qty;
+        const v = map[t].val;
+        qtys.push(q);
+        prices.push(q > 0 ? v / (q*100) : null);
+    });
+    return { times, qtys, prices };
+}
+
+// ===== BROKER SUMMARY =====
+function buildBrokerSummary(rows){
+    const stats = {};
+    rows.forEach(r => {
+        if (!stats[r.BC]) stats[r.BC] = {
+            broker: r.BC,
+            grossBuyLot:0, grossBuyVal:0,
+            grossSellLot:0, grossSellVal:0
+        };
+        if (!stats[r.SC]) stats[r.SC] = {
+            broker: r.SC,
+            grossBuyLot:0, grossBuyVal:0,
+            grossSellLot:0, grossSellVal:0
+        };
+        stats[r.BC].grossBuyLot += r.qty;
+        stats[r.BC].grossBuyVal += r.qty * r.price * 100;
+        stats[r.SC].grossSellLot += r.qty;
+        stats[r.SC].grossSellVal += r.qty * r.price * 100;
+    });
+
+    const list = Object.values(stats).map(s => {
+        const netLot = s.grossBuyLot - s.grossSellLot;
+        const netVal = s.grossBuyVal - s.grossSellVal;
+        const avgBuy = s.grossBuyLot > 0 ? (s.grossBuyVal / (s.grossBuyLot * 100)) : null;
+        const avgSell = s.grossSellLot > 0 ? (s.grossSellVal / (s.grossSellLot * 100)) : null;
+        return {
+            ...s,
+            netLot,
+            netVal,
+            avgBuy,
+            avgSell
+        };
+    });
+
+    return list;
+}
+
+function renderBrokerSummary(list){
+    const header = document.getElementById("summaryHeader");
+    const tbody = document.querySelector("#summaryTable tbody");
+    tbody.innerHTML = "";
+
+    let buyers, sellers;
+
+    if (summaryMode === "gross") {
+        header.innerHTML = `
+            <th colspan="4">Buy (Gross)</th>
+            <th colspan="4">Sell (Gross)</th>
+        `;
+        buyers = list
+            .filter(s => s.grossBuyVal > 0)
+            .sort((a,b)=>b.grossBuyVal - a.grossBuyVal);
+        sellers = list
+            .filter(s => s.grossSellVal > 0)
+            .sort((a,b)=>b.grossSellVal - a.grossSellVal);
+    } else {
+        header.innerHTML = `
+            <th colspan="4">Net Buy</th>
+            <th colspan="4">Net Sell</th>
+        `;
+        buyers = list
+            .filter(s => s.netVal > 0)
+            .sort((a,b)=>b.netVal - a.netVal);
+        sellers = list
+            .filter(s => s.netVal < 0)
+            .sort((a,b)=>Math.abs(b.netVal) - Math.abs(a.netVal));
+    }
+
+    const maxRows = Math.max(buyers.length, sellers.length);
+
+    for (let i=0; i<maxRows; i++){
+        const b = buyers[i];
+        const s = sellers[i];
+
+        const tr = document.createElement("tr");
+
+        let buyCols = "<td></td><td></td><td></td><td></td>";
+        let sellCols = "<td></td><td></td><td></td><td></td>";
+
+        if (summaryMode === "gross") {
+            if (b) {
+                const col = getBrokerColor(b.broker);
+                buyCols = `
+                    <td style="background:${col};color:#f9fafb;font-weight:bold;">${b.broker}</td>
+                    <td>${formatMillion(b.grossBuyVal)}</td>
+                    <td>${formatNumber(b.grossBuyLot)}</td>
+                    <td>${b.avgBuy ? b.avgBuy.toFixed(1) : "-"}</td>
+                `;
+            }
+            if (s) {
+                const col = getBrokerColor(s.broker);
+                sellCols = `
+                    <td style="background:${col};color:#f9fafb;font-weight:bold;">${s.broker}</td>
+                    <td>${formatMillion(s.grossSellVal)}</td>
+                    <td>${formatNumber(s.grossSellLot)}</td>
+                    <td>${s.avgSell ? s.avgSell.toFixed(1) : "-"}</td>
+                `;
+            }
+        } else {
+            if (b) {
+                const col = getBrokerColor(b.broker);
+                buyCols = `
+                    <td style="background:${col};color:#f9fafb;font-weight:bold;">${b.broker}</td>
+                    <td>${formatMillion(b.netVal)}</td>
+                    <td>${formatNumber(b.netLot)}</td>
+                    <td>${b.avgBuy ? b.avgBuy.toFixed(1) : "-"}</td>
+                `;
+            }
+            if (s) {
+                const absNet = Math.abs(s.netVal);
+                const netLot = Math.abs(s.netLot);
+                const col = getBrokerColor(s.broker);
+                sellCols = `
+                    <td style="background:${col};color:#f9fafb;font-weight:bold;">${s.broker}</td>
+                    <td>${formatMillion(absNet)}</td>
+                    <td>${formatNumber(netLot)}</td>
+                    <td>${s.avgSell ? s.avgSell.toFixed(1) : "-"}</td>
+                `;
+            }
+        }
+
+        tr.innerHTML = buyCols + sellCols;
+        tbody.appendChild(tr);
+    }
+}
+
+// ===== DETAIL TRANSAKSI + MERGE GROUP VALUE + DRAG SELECT =====
+function renderTable(rows) {
+    const tbody = document.querySelector("#resultTable tbody");
+    tbody.innerHTML = "";
+
+    const byTime = {};
+    rows.forEach(r => {
+        if (!byTime[r.time]) byTime[r.time] = [];
+        byTime[r.time].push(r);
+    });
+
+    let totalLot = 0;
+    let totalVal = 0;
+
+    Object.keys(byTime).forEach(time => {
+        const group = byTime[time];
+        const rowspan = group.length;
+
+        const gv = formatMillion(group[0].groupValue);
+        const gt = group[0].groupTag;
+
+        group.forEach((r, idx) => {
+            const tr = document.createElement("tr");
+
+            if (r.cross) tr.classList.add("cross");
+            else if (r.haka) tr.classList.add("haka");
+            else if (r.haki) tr.classList.add("haki");
+
+            const value = r.qty * r.price * 100;
+
+            totalLot += r.qty;
+            totalVal += value;
+
+            tr.dataset.qty = r.qty;
+            tr.dataset.value = value;
+
+            // Mouse events untuk selection (Excel style)
+            tr.addEventListener("mousedown", function(e) {
+                if (this.dataset.total === "1") return;
+                if (e.button !== 0) return;
+                isMouseDown = true;
+                didDrag = false;
+
+                document
+                    .querySelectorAll("#resultTable tbody tr.selected-row")
+                    .forEach(rw => rw.classList.remove("selected-row"));
+
+                this.classList.add("selected-row");
+                e.preventDefault();
+            });
+
+            tr.addEventListener("mouseover", function() {
+                if (!isMouseDown) return;
+                if (this.dataset.total === "1") return;
+                didDrag = true;
+                this.classList.add("selected-row");
+            });
+
+            tr.addEventListener("click", function(e) {
+                if (this.dataset.total === "1") return;
+                if (didDrag) {
+                    return;
+                }
+                // simple click: sudah diset di mousedown, hanya update summary
+                scheduleSelectionSummaryUpdate();
+            });
+
+            const btBg = getTypeBg(r.BT);
+            const stBg = getTypeBg(r.ST);
+            const bcColor = getBrokerColor(r.BC);
+            const scColor = getBrokerColor(r.SC);
+
+            tr.innerHTML = `
+                <td>${r.time}</td>
+                <td>${r.stock}</td>
+                <td>${r.price}</td>
+                <td>${formatNumber(r.qty)}</td>
+                <td>${formatMillion(value)}</td>
+            `;
+
+            if (idx === 0) {
+                tr.innerHTML += `
+                    <td rowspan="${rowspan}" style="vertical-align: middle; font-weight: bold; background:#020617;">
+                        ${gv}<br>
+                        <span style="font-size:11px; color:#9ca3af;">${gt}</span>
+                    </td>
+                `;
+            }
+
+            tr.innerHTML += `
+                <td style="background:${btBg};">${r.BT}</td>
+                <td style="background:${bcColor};color:#f9fafb;font-weight:bold;">${r.BC}</td>
+                <td style="background:${scColor};color:#f9fafb;font-weight:bold;">${r.SC}</td>
+                <td style="background:${stBg};">${r.ST}</td>
+                <td>${r.tag}</td>
+            `;
+
+            tbody.appendChild(tr);
+        });
+    });
+
+    const trTotal = document.createElement("tr");
+    trTotal.style.background = "#064e3b";
+    trTotal.dataset.total = "1";
+
+    trTotal.innerHTML = `
+        <td colspan="3"><b>TOTAL</b></td>
+        <td><b>${formatNumber(totalLot)}</b></td>
+        <td><b>${formatMillion(totalVal)}</b></td>
+        <td colspan="6"></td>
+    `;
+
+    tbody.appendChild(trTotal);
+}
+
+// ===== SELECTION SUMMARY =====
+function scheduleSelectionSummaryUpdate() {
+    if (selectionTimer) clearTimeout(selectionTimer);
+    selectionTimer = setTimeout(updateSelectionSummary, 800);
+}
+
+function updateSelectionSummary() {
+    const rows = document.querySelectorAll("#resultTable tbody tr.selected-row");
+    const summaryBox = document.getElementById("selectionSummary");
+
+    if (!rows.length) {
+        summaryBox.style.display = "none";
+        return;
+    }
+
+    let totalLot = 0;
+    let totalVal = 0;
+
+    rows.forEach(tr => {
+        const q = parseFloat(tr.dataset.qty || "0");
+        const v = parseFloat(tr.dataset.value || "0");
+        totalLot += q;
+        totalVal += v;
+    });
+
+    const avgPrice = totalLot > 0 ? (totalVal / (totalLot * 100)) : 0;
+
+    summaryBox.innerHTML = `
+        <b>Summary Selected Rows</b><br>
+        Lot: ${formatNumber(totalLot)}<br>
+        Value: ${formatMillion(totalVal)}<br>
+        Avg Price: ${avgPrice.toFixed(2)}
+    `;
+    summaryBox.style.display = "block";
+}
+
+// ===== CHART: QTY + PRICE =====
+function renderTimeChart(rows) {
+    const ctx = document.getElementById("chartTime").getContext("2d");
+    const ts = globalTimeStats || buildTimeStats(rows);
+
+    if (chartTimeObj) chartTimeObj.destroy();
+
+    chartTimeObj = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: ts.times,
+            datasets: [
+                {
+                    label: "Total Qty per Time (Lot)",
+                    data: ts.qtys,
+                    yAxisID: "y",
+                    tension: 0.2
+                },
+                {
+                    label: "Price (VWAP)",
+                    data: ts.prices,
+                    yAxisID: "y1",
+                    borderDash: [4,3],
+                    tension: 0.2
+                }
+            ]
+        },
+        options: {
+            plugins: {
+                legend: { labels: { color: "#e5e7eb" } }
+            },
+            interaction: { mode: "index", intersect: false },
+            stacked: false,
+            scales: {
+                x: { ticks: { color: "#9ca3af" }, grid: { color:"#1f2937" } },
+                y: {
+                    type: "linear",
+                    position: "left",
+                    title: { display: true, text: "Qty (Lot)", color:"#e5e7eb" },
+                    ticks: { color:"#9ca3af" },
+                    grid: { color:"#111827" }
+                },
+                y1: {
+                    type: "linear",
+                    position: "right",
+                    title: { display: true, text: "Price", color:"#e5e7eb" },
+                    ticks: { color:"#9ca3af" },
+                    grid: { drawOnChartArea: false, color:"#111827" }
+                }
+            }
+        }
+    });
+}
+
+// ===== CHART: DOMINANT BROKER + PRICE =====
+function renderDominantBrokerChart(rows) {
+    const ctx = document.getElementById("chartBrokerDom").getContext("2d");
+
+    const sorted = [...rows].sort((a,b) => timeToSec(a.time) - timeToSec(b.time));
+
+    const brokerSet = new Set();
+    sorted.forEach(r => {
+        brokerSet.add(r.BC);
+        brokerSet.add(r.SC);
+    });
+
+    const brokers = Array.from(brokerSet);
+    const times   = [...new Set(sorted.map(r => r.time))].sort((a,b)=>timeToSec(a)-timeToSec(b));
+
+    const cum = {};
+    brokers.forEach(b => cum[b] = Array(times.length).fill(0));
+
+    let lastCum = {};
+    brokers.forEach(b => lastCum[b] = 0);
+
+    times.forEach((t, idx) => {
+        brokers.forEach(b => cum[b][idx] = lastCum[b]);
+        sorted.filter(r => r.time === t).forEach(r => {
+            lastCum[r.BC] += r.qty;
+            lastCum[r.SC] -= r.qty;
+        });
+        brokers.forEach(b => cum[b][idx] = lastCum[b]);
+    });
+
+    const activity = brokers.map(b => ({
+        broker: b,
+        score: Math.max(...cum[b].map(v => Math.abs(v)))
+    })).sort((a,b)=>b.score - a.score);
+
+    const topN = activity.slice(0, 5).map(a => a.broker);
+
+    const datasets = topN.map(b => {
+        const col = getBrokerColor(b);
+        return {
+            label: b,
+            data: cum[b],
+            yAxisID: "y",
+            borderWidth: 2,
+            fill: false,
+            borderColor: col,
+            backgroundColor: col,
+            tension: 0.25
+        };
+    });
+
+    const ts = globalTimeStats || buildTimeStats(rows);
+
+    datasets.push({
+        label: "Price (VWAP)",
+        data: ts.times.map(t => {
+            const idx = ts.times.indexOf(t);
+            return idx >= 0 ? ts.prices[idx] : null;
+        }),
+        yAxisID: "y1",
+        borderWidth: 1.5,
+        borderDash: [6,4],
+        fill: false,
+        borderColor: "#9ca3af",
+        tension: 0.25
+    });
+
+    if (chartDomObj) chartDomObj.destroy();
+
+    chartDomObj = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: times,
+            datasets
+        },
+        options: {
+            plugins: {
+                legend: { labels: { color:"#e5e7eb" } }
+            },
+            interaction: { mode: "index", intersect: false },
+            stacked: false,
+            scales: {
+                x: { ticks:{ color:"#9ca3af" }, grid:{ color:"#1f2937" } },
+                y: {
+                    type: "linear",
+                    position: "left",
+                    title: { display: true, text: "Net Volume (Lot)", color:"#e5e7eb" },
+                    ticks: { color:"#9ca3af" },
+                    grid: { color:"#111827" }
+                },
+                y1: {
+                    type: "linear",
+                    position: "right",
+                    title: { display: true, text: "Price", color:"#e5e7eb" },
+                    ticks: { color:"#9ca3af" },
+                    grid: { drawOnChartArea: false, color:"#111827" }
+                }
+            }
+        }
+    });
+}
+
+// ===== HELPERS =====
+function timeToSec(t) {
+    const [h,m,s] = t.split(":").map(Number);
+    return h*3600 + m*60 + s;
+}
+
+function formatNumber(x){
+    if (x === null || x === undefined) return "-";
+    return x.toLocaleString("en-US");
+}
+
+function formatMillion(v){
+    if (v === null || v === undefined) return "-";
+    const million = v / 1_000_000;
+    return million.toFixed(1) + " M";
+}
+</script>
+
+</body>
+</html>
