@@ -190,7 +190,9 @@ Paste broker summary (<code>Time Stock Brd Price Qty BT BC SC ST</code>) → kli
   <span style="color:#bfdbfe;">Filters:</span><br>
   Lot: <input type="text" id="lotFilter" placeholder="e.g. >1000" style="margin:5px; background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:4px;padding:4px;width:120px;">
   BC/SC: <input type="text" id="brokerFilter" placeholder="Broker code" style="margin:5px; background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:4px;padding:4px;width:120px;">
-  Time: <input type="text" id="timeFilter" placeholder="HH:MM:SS - HH:MM:SS" style="margin:5px; background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:4px;padding:4px;width:180px;">
+  Start Time: <input type="time" id="startTimeFilter" step="1" style="margin:5px; background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:4px;padding:4px;">
+  End Time: <input type="time" id="endTimeFilter" step="1" style="margin:5px; background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:4px;padding:4px;">
+  Manual Time: <input type="text" id="timeFilter" placeholder="HH:MM:SS - HH:MM:SS" style="margin:5px; background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:4px;padding:4px;width:180px;">
   <button id="applyFilter" style="margin:5px; background:#3b82f6;color:#f9fafb;border:1px solid #3b82f6;border-radius:4px;padding:4px 8px;">Apply</button>
 </div>
 <div style="max-height:420px;overflow:auto;border-radius:12px;border:1px solid #1f2937;background:#020617;">
@@ -559,6 +561,11 @@ function renderTable(data = globalRows) {
             startTime = parts[0];
             endTime = parts[1];
         }
+    } else {
+        const startPicker = document.getElementById('startTimeFilter').value;
+        const endPicker = document.getElementById('endTimeFilter').value;
+        if (startPicker) startTime = startPicker;
+        if (endPicker) endTime = endPicker;
     }
     if (startTime && endTime) {
         filtered = filtered.filter(r => {
