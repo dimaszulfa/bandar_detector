@@ -57,13 +57,18 @@
         z-index: 5;
     }
 
-    /* Freeze header for result table */
+    /* Freeze header for result table - minimal change */
     #resultTable thead th {
         position: sticky;
         top: 0;
         background: #111827;
         color: #f9fafb;
         z-index: 6;
+    }
+
+    /* ensure the scroll wrapper doesn't break sticky (wrapper already has overflow:auto) */
+    div[style*="max-height:420px"][style*="overflow:auto"] {
+        position: relative;
     }
 
     .haka { background: #0b3b6b; }
@@ -328,10 +333,39 @@ function getTypeBg(type) {
 }
 
 // ===== PASTE HANDLER =====
-document.getElementById("pasteArea").addEventListener("paste", function() {
+document.getElementById("pasteArea").addEventListener("paste", function(e) {
+    // get clipboard text
+    const clip = (e.clipboardData || window.clipboardData).getData('text') || '';
+    if (!clip) return;
+
+    // normalize line endings
+    const text = clip.replace(/\r/g, '');
+    // get first non-empty line
+    const firstLine = text.split('\n').find(l => l.trim()) || '';
+
+    // detect header like: Time<TAB>Stock<TAB>Brd<TAB>Price<TAB>Qty<TAB>BT<TAB>BC<TAB>SC<TAB>ST
+    const headerRegex = /Time\W+Stock\W+Brd\W+Price\W+Qty\W+BT\W+BC\W+SC\W+ST/i;
+
+    if (headerRegex.test(firstLine)) {
+        // prevent default paste into textarea (we will set value programmatically based on user choice)
+        e.preventDefault();
+        const want = confirm("Do you want paste your data to broker summary field? (Jika pilih Yes, data akan langsung dipaste)");
+        if (want) {
+            // paste entire clipboard text into textarea and process immediately
+            this.value = text;
+            try { processData(text); } catch(err) { console.error('processData error:', err); }
+        } else {
+            // user declined: do nothing (no paste)
+        }
+        return;
+    }
+
+    // fallback: default behavior — let browser paste into textarea then process after short delay
     setTimeout(() => {
         const raw = this.value.trim();
-        processData(raw);
+        if (raw) {
+            try { processData(raw); } catch(err) { console.error('processData error:', err); }
+        }
     }, 50);
 });
 
@@ -933,7 +967,7 @@ function renderDominantBrokerChart(rows) {
     const sorted = [...rows].sort((a,b) => timeToSec(a.time) - timeToSec(b.time));
 
     const brokerSet = new Set();
-    sorted.forEach(r => {
+    sorted.forEach (r => {
         if (r.BC) brokerSet.add(r.BC);
         if (r.SC) brokerSet.add(r.SC);
     });
