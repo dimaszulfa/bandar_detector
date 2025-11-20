@@ -66,7 +66,23 @@
         z-index: 6;
     }
 
-    /* Broker selector chips / input */
+    .haka { background: #0b3b6b; }
+    .haki { background: #5a1f2d; }
+    .cross { background: #3b255c; }
+
+    .legend-box {
+        display:inline-block;
+        width:14px;
+        height:14px;
+        margin-right:4px;
+        vertical-align:middle;
+        border-radius: 3px;
+    }
+    .legend-haka { background:#0b3b6b; }
+    .legend-haki { background:#5a1f2d; }
+    .legend-cross{ background:#3b255c; }
+
+    /* Broker selector chips / input (added) */
     .broker-selector {
         margin-top:10px;
         display:flex;
@@ -114,25 +130,9 @@
     }
     .chip .remove {
         cursor:pointer;
-        opacity:0.8;
+        opacity:0.9;
         padding-left:6px;
     }
-
-    .haka { background: #0b3b6b; }
-    .haki { background: #5a1f2d; }
-    .cross { background: #3b255c; }
-
-    .legend-box {
-        display:inline-block;
-        width:14px;
-        height:14px;
-        margin-right:4px;
-        vertical-align:middle;
-        border-radius: 3px;
-    }
-    .legend-haka { background:#0b3b6b; }
-    .legend-haki { background:#5a1f2d; }
-    .legend-cross{ background:#3b255c; }
 
     .layout-row {
         display:flex;
@@ -219,7 +219,7 @@ Paste broker summary (<code>Time Stock Brd Price Qty BT BC SC ST</code>) → kli
         <h3>📊 Line Chart – Net Volume per Broker + Price</h3>
         <canvas id="chartBrokerDom" height="160"></canvas>
 
-        <!-- Broker selector UI -->
+        <!-- Broker selector UI (added) -->
         <div id="brokerSelector" class="broker-selector">
             <div class="broker-input">
                 <input id="brokerInput" placeholder="Tambah broker (kode), tekan Enter atau tombol +" />
@@ -302,7 +302,7 @@ let selectionTimer = null;
 let isMouseDown = false;
 let didDrag = false;
 
-// new: selected brokers for Net Volume chart (chips)
+// new: selected brokers (chips)
 let selectedBrokers = [];
 
 // ===== Broker color map (consistent) =====
@@ -408,11 +408,10 @@ function processData(rawText) {
     globalTimeStats = buildTimeStats(rows);
     globalBrokerSummary = buildBrokerSummary(rows);
 
-    globalRows = rows;
-
-    // set default selected brokers (5 net buy + 5 net sell) from summary
+    // set default selected brokers (5 net buy + 5 net sell) if available
     setDefaultSelectedBrokers(globalBrokerSummary);
 
+    globalRows = rows;
     renderTable();
     renderTimeChart(rows);
     renderDominantBrokerChart(rows);
@@ -420,19 +419,19 @@ function processData(rawText) {
     document.getElementById("selectionSummary").style.display = "none";
 }
 
-// new: set default selected brokers (top 5 net buy + top 5 net sell if available)
+// new: choose default selected brokers (top 5 net buy + top 5 net sell)
 function setDefaultSelectedBrokers(list) {
     if (!Array.isArray(list)) return;
     const buys = list.filter(s => s.netVal > 0).sort((a,b)=>b.netVal - a.netVal).slice(0,5).map(s=>s.broker);
     const sells = list.filter(s => s.netVal < 0).sort((a,b)=>Math.abs(b.netVal) - Math.abs(a.netVal)).slice(0,5).map(s=>s.broker);
-    const combined = Array.from(new Set([...buys, ...sells]));
-    selectedBrokers = combined;
+    selectedBrokers = Array.from(new Set([...buys, ...sells]));
     renderBrokerChips();
 }
 
 // render chips UI
 function renderBrokerChips() {
     const container = document.getElementById("brokerChips");
+    if (!container) return;
     container.innerHTML = "";
     selectedBrokers.forEach(b => {
         const chip = document.createElement("span");
@@ -463,6 +462,7 @@ document.getElementById("brokerInput").addEventListener("keydown", function(e) {
 
 function addBrokerFromInput() {
     const el = document.getElementById("brokerInput");
+    if (!el) return;
     const code = (el.value || "").trim().toUpperCase();
     if (!code) return;
     if (!selectedBrokers.includes(code)) {
@@ -473,6 +473,459 @@ function addBrokerFromInput() {
     el.value = "";
 }
 
+// ===== DETECT HAKA / HAKI / CROSS & GROUP VALUE =====
+function detectHakaHaki(rows) {
+    const byTime = {};
+    rows.forEach(r => {
+        if (!byTime[r.time]) byTime[r.time] = [];
+        byTime[r.time].push(r);
+    });
+
+    const clusterValue = {};
+    const clusterTag   = {};
+
+    Object.keys(byTime).forEach(time => {
+        const group = byTime[time];
+
+        const totalValue = group.reduce((sum, r) => sum + (r.qty * r.price * 100), 0);
+
+        const countBC = {}, countSC = {};
+        group.forEach(r => {
+            countBC[r.BC] = (countBC[r.BC] || 0) + 1;
+            countSC[r.SC] = (countSC[r.SC] || 0) + 1;
+        });
+
+        let tag = "-";
+        let isHaka = false, isHaki = false, isCross = false;
+
+        Object.keys(countBC).forEach(b => { if (countBC[b] > 1) isHaka = true; });
+        Object.keys(countSC).forEach(b => { if (countSC[b] > 1) isHaki = true; });
+        Object.keys(countBC).forEach(b => { if (countBC[b] && countSC[b]) isCross = true; });
+
+        if (isCross) tag = "Cross / Haka-Haki";
+        else if (isHaka) tag = "Haka (Buy cluster)";
+        else if (isHaki) tag = "Haki (Sell cluster)";
+
+        clusterValue[time] = totalValue;
+        clusterTag[time]   = tag;
+    });
+
+    rows.forEach(r => {
+        r.groupValue = clusterValue[r.time];
+        r.groupTag   = clusterTag[r.time];
+
+        r.cross = r.groupTag.includes("Cross");
+        r.haka  = r.groupTag.includes("Haka (Buy");
+        r.haki  = r.groupTag.includes("Haki (Sell");
+        r.tag   = r.groupTag;
+    });
+}
+
+// ===== TIME STATS UNTUK CHART =====
+function buildTimeStats(rows){
+    const map = {};
+    rows.forEach(r => {
+        if (!map[r.time]) map[r.time] = {qty:0, val:0};
+        map[r.time].qty += r.qty;
+        map[r.time].val += r.qty * r.price * 100;
+    });
+    const times = Object.keys(map).sort((a,b)=>timeToSec(a)-timeToSec(b));
+    const qtys = [];
+    const prices = [];
+    times.forEach(t=>{
+        const q = map[t].qty;
+        const v = map[t].val;
+        qtys.push(q);
+        prices.push(q > 0 ? v / (q*100) : null);
+    });
+    return { times, qtys, prices };
+}
+
+// ===== BROKER SUMMARY =====
+function buildBrokerSummary(rows){
+    const stats = {};
+    rows.forEach(r => {
+        if (!stats[r.BC]) stats[r.BC] = {
+            broker: r.BC,
+            grossBuyLot:0, grossBuyVal:0,
+            grossSellLot:0, grossSellVal:0
+        };
+        if (!stats[r.SC]) stats[r.SC] = {
+            broker: r.SC,
+            grossBuyLot:0, grossBuyVal:0,
+            grossSellLot:0, grossSellVal:0
+        };
+        stats[r.BC].grossBuyLot += r.qty;
+        stats[r.BC].grossBuyVal += r.qty * r.price * 100;
+        stats[r.SC].grossSellLot += r.qty;
+        stats[r.SC].grossSellVal += r.qty * r.price * 100;
+    });
+
+    const list = Object.values(stats).map(s => {
+        const netLot = s.grossBuyLot - s.grossSellLot;
+        const netVal = s.grossBuyVal - s.grossSellVal;
+        const avgBuy = s.grossBuyLot > 0 ? (s.grossBuyVal / (s.grossBuyLot * 100)) : null;
+        const avgSell = s.grossSellLot > 0 ? (s.grossSellVal / (s.grossSellLot * 100)) : null;
+        return {
+            ...s,
+            netLot,
+            netVal,
+            avgBuy,
+            avgSell
+        };
+    });
+
+    return list;
+}
+
+function renderBrokerSummary(list){
+    const header = document.getElementById("summaryHeader");
+    const tbody = document.querySelector("#summaryTable tbody");
+    tbody.innerHTML = "";
+
+    let buyers, sellers;
+
+    if (summaryMode === "gross") {
+        header.innerHTML = `
+            <th colspan="4">Buy (Gross)</th>
+            <th colspan="4">Sell (Gross)</th>
+        `;
+        buyers = list
+            .filter(s => s.grossBuyVal > 0)
+            .sort((a,b)=>b.grossBuyVal - a.grossBuyVal);
+        sellers = list
+            .filter(s => s.grossSellVal > 0)
+            .sort((a,b)=>b.grossSellVal - a.grossSellVal);
+    } else {
+        header.innerHTML = `
+            <th colspan="4">Net Buy</th>
+            <th colspan="4">Net Sell</th>
+        `;
+        buyers = list
+            .filter(s => s.netVal > 0)
+            .sort((a,b)=>b.netVal - a.netVal);
+        sellers = list
+            .filter(s => s.netVal < 0)
+            .sort((a,b)=>Math.abs(b.netVal) - Math.abs(a.netVal));
+    }
+
+    const maxRows = Math.max(buyers.length, sellers.length);
+
+    for (let i=0; i<maxRows; i++){
+        const b = buyers[i];
+        const s = sellers[i];
+
+        const tr = document.createElement("tr");
+
+        let buyCols = "<td></td><td></td><td></td><td></td>";
+        let sellCols = "<td></td><td></td><td></td><td></td>";
+
+        if (summaryMode === "gross") {
+            if (b) {
+                const col = getBrokerColor(b.broker);
+                buyCols = `
+                    <td style="background:${col};color:#f9fafb;font-weight:bold;">${b.broker}</td>
+                    <td>${formatMillion(b.grossBuyVal)}</td>
+                    <td>${formatNumber(b.grossBuyLot)}</td>
+                    <td>${b.avgBuy ? b.avgBuy.toFixed(1) : "-"}</td>
+                `;
+            }
+            if (s) {
+                const col = getBrokerColor(s.broker);
+                sellCols = `
+                    <td style="background:${col};color:#f9fafb;font-weight:bold;">${s.broker}</td>
+                    <td>${formatMillion(s.grossSellVal)}</td>
+                    <td>${formatNumber(s.grossSellLot)}</td>
+                    <td>${s.avgSell ? s.avgSell.toFixed(1) : "-"}</td>
+                `;
+            }
+        } else {
+            if (b) {
+                const col = getBrokerColor(b.broker);
+                buyCols = `
+                    <td style="background:${col};color:#f9fafb;font-weight:bold;">${b.broker}</td>
+                    <td>${formatMillion(b.netVal)}</td>
+                    <td>${formatNumber(b.netLot)}</td>
+                    <td>${b.avgBuy ? b.avgBuy.toFixed(1) : "-"}</td>
+                `;
+            }
+            if (s) {
+                const absNet = Math.abs(s.netVal);
+                const netLot = Math.abs(s.netLot);
+                const col = getBrokerColor(s.broker);
+                sellCols = `
+                    <td style="background:${col};color:#f9fafb;font-weight:bold;">${s.broker}</td>
+                    <td>${formatMillion(absNet)}</td>
+                    <td>${formatNumber(netLot)}</td>
+                    <td>${s.avgSell ? s.avgSell.toFixed(1) : "-"}</td>
+                `;
+            }
+        }
+
+        tr.innerHTML = buyCols + sellCols;
+        tbody.appendChild(tr);
+    }
+}
+
+// ===== DETAIL TRANSAKSI + MERGE GROUP VALUE + DRAG SELECT =====
+function renderTable(data = globalRows) {
+    if (!data) return;
+    const tbody = document.querySelector("#resultTable tbody");
+    tbody.innerHTML = "";
+
+    // Apply filters
+    let filtered = data.slice();
+    const lotVal = document.getElementById('lotFilter').value.trim();
+    let minLot = null;
+    if (lotVal.startsWith('>')) minLot = parseInt(lotVal.slice(1));
+    if (minLot !== null) filtered = filtered.filter(r => r.qty >= minLot);
+
+    const brokerVal = document.getElementById('brokerFilter').value.trim().toUpperCase();
+    if (brokerVal) filtered = filtered.filter(r => r.BC.toUpperCase().includes(brokerVal) || r.SC.toUpperCase().includes(brokerVal));
+
+    const timeVal = document.getElementById('timeFilter').value.trim();
+    let startTime = null, endTime = null;
+    if (timeVal) {
+        const parts = timeVal.split('-').map(s => s.trim());
+        if (parts.length > 1) {
+            startTime = parts[0];
+            endTime = parts[1];
+        }
+    } else {
+        const startPicker = document.getElementById('startTimeFilter').value;
+        const endPicker = document.getElementById('endTimeFilter').value;
+        if (startPicker) startTime = startPicker;
+        if (endPicker) endTime = endPicker;
+    }
+    if (startTime && endTime) {
+        filtered = filtered.filter(r => {
+            const rSec = timeToSec(r.time);
+            return rSec >= timeToSec(startTime) && rSec <= timeToSec(endTime);
+        });
+    }
+
+    // Group by time
+    const byTime = {};
+    filtered.forEach(r => {
+        if (!byTime[r.time]) byTime[r.time] = [];
+        byTime[r.time].push(r);
+    });
+
+    let totalLot = 0;
+    let totalVal = 0;
+    filtered.forEach(r => {
+        const value = r.qty * r.price * 100;
+        totalLot += r.qty;
+        totalVal += value;
+    });
+
+    Object.keys(byTime).forEach(time => {
+        const group = byTime[time];
+        const rowspan = group.length;
+
+        // Recompute group value & tag based on the CURRENT filtered group
+        const totalValue = group.reduce((sum, rr) => sum + (rr.qty * rr.price * 100), 0);
+        const countBC = {}, countSC = {};
+        group.forEach(rr => {
+            countBC[rr.BC] = (countBC[rr.BC] || 0) + 1;
+            countSC[rr.SC] = (countSC[rr.SC] || 0) + 1;
+        });
+
+        let tag = "-";
+        let isHaka = false, isHaki = false, isCross = false;
+        Object.keys(countBC).forEach(b => { if (countBC[b] > 1) isHaka = true; });
+        Object.keys(countSC).forEach(b => { if (countSC[b] > 1) isHaki = true; });
+        Object.keys(countBC).forEach(b => { if (countBC[b] && countSC[b]) isCross = true; });
+
+        if (isCross) tag = "Cross / Haka-Haki";
+        else if (isHaka) tag = "Haka (Buy cluster)";
+        else if (isHaki) tag = "Haki (Sell cluster)";
+
+        const gv = formatIdr(totalValue);
+        const gt = tag;
+
+        group.forEach((r, idx) => {
+            const tr = document.createElement("tr");
+
+            // Apply group-based class (so coloring follows filtered group)
+            if (isCross) tr.classList.add("cross");
+            else if (isHaka) tr.classList.add("haka");
+            else if (isHaki) tr.classList.add("haki");
+
+            const value = r.qty * r.price * 100;
+
+            tr.dataset.qty = r.qty;
+            tr.dataset.value = value;
+
+            // Mouse events untuk selection (Excel style)
+            tr.addEventListener("mousedown", function(e) {
+                if (this.dataset.total === "1") return;
+                if (e.button !== 0) return;
+                isMouseDown = true;
+                didDrag = false;
+
+                document
+                    .querySelectorAll("#resultTable tbody tr.selected-row")
+                    .forEach(rw => rw.classList.remove("selected-row"));
+
+                this.classList.add("selected-row");
+                e.preventDefault();
+            });
+
+            tr.addEventListener("mouseover", function() {
+                if (!isMouseDown) return;
+                if (this.dataset.total === "1") return;
+                didDrag = true;
+                this.classList.add("selected-row");
+            });
+
+            tr.addEventListener("click", function(e) {
+                if (this.dataset.total === "1") return;
+                if (didDrag) {
+                    return;
+                }
+                // simple click: sudah diset di mousedown, hanya update summary
+                scheduleSelectionSummaryUpdate();
+            });
+
+            const btBg = getTypeBg(r.BT);
+            const stBg = getTypeBg(r.ST);
+            const bcColor = getBrokerColor(r.BC);
+            const scColor = getBrokerColor(r.SC);
+
+            tr.innerHTML = `
+                <td>${r.time}</td>
+                <td>${r.stock}</td>
+                <td>${r.price}</td>
+                <td>${formatNumber(r.qty)}</td>
+                <td>${formatIdr(value)}</td>
+            `;
+
+            if (idx === 0) {
+                tr.innerHTML += `
+                    <td rowspan="${rowspan}" style="vertical-align: middle; font-weight: bold; background:#020617;">
+                        ${gv}<br>
+                        <span style="font-size:11px; color:#9ca3af;">${gt}</span>
+                    </td>
+                `;
+            }
+
+            tr.innerHTML += `
+                <td style="background:${btBg};">${r.BT}</td>
+                <td style="background:${bcColor};color:#f9fafb;font-weight:bold;">${r.BC}</td>
+                <td style="background:${scColor};color:#f9fafb;font-weight:bold;">${r.SC}</td>
+                <td style="background:${stBg};">${r.ST}</td>
+                <td>${gt}</td>
+            `;
+
+            tbody.appendChild(tr);
+        });
+    });
+
+    const trTotal = document.createElement("tr");
+    trTotal.style.background = "#064e3b";
+    trTotal.dataset.total = "1";
+
+    trTotal.innerHTML = `
+        <td colspan="3"><b>TOTAL</b></td>
+        <td><b>${formatNumber(totalLot)}</b></td>
+        <td><b>${formatIdr(totalVal)}</b></td>
+        <td colspan="6"></td>
+    `;
+
+    tbody.appendChild(trTotal);
+}
+
+// ===== SELECTION SUMMARY =====
+function scheduleSelectionSummaryUpdate() {
+    if (selectionTimer) clearTimeout(selectionTimer);
+    selectionTimer = setTimeout(updateSelectionSummary, 800);
+}
+
+function updateSelectionSummary() {
+    const rows = document.querySelectorAll("#resultTable tbody tr.selected-row");
+    const summaryBox = document.getElementById("selectionSummary");
+
+    if (!rows.length) {
+        summaryBox.style.display = "none";
+        return;
+    }
+
+    let totalLot = 0;
+    let totalVal = 0;
+
+    rows.forEach(tr => {
+        const q = parseFloat(tr.dataset.qty || "0");
+        const v = parseFloat(tr.dataset.value || "0");
+        totalLot += q;
+        totalVal += v;
+    });
+
+    const avgPrice = totalLot > 0 ? (totalVal / (totalLot * 100)) : 0;
+
+    summaryBox.innerHTML = `
+        <b>Summary Selected Rows</b><br>
+        Lot: ${formatNumber(totalLot)}<br>
+        Value: ${formatIdr(totalVal)}<br>
+        Avg Price: ${avgPrice.toFixed(2)}
+    `;
+    summaryBox.style.display = "block";
+}
+
+// ===== CHART: QTY + PRICE =====
+function renderTimeChart(rows) {
+    const ctx = document.getElementById("chartTime").getContext("2d");
+    const ts = globalTimeStats || buildTimeStats(rows);
+
+    if (chartTimeObj) chartTimeObj.destroy();
+
+    chartTimeObj = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: ts.times,
+            datasets: [
+                {
+                    label: "Total Qty per Time (Lot)",
+                    data: ts.qtys,
+                    yAxisID: "y",
+                    tension: 0.2
+                },
+                {
+                    label: "Price (VWAP)",
+                    data: ts.prices,
+                    yAxisID: "y1",
+                    borderDash: [4,3],
+                    tension: 0.2
+                }
+            ]
+        },
+        options: {
+            plugins: {
+                legend: { labels: { color: "#e5e7eb" } }
+            },
+            interaction: { mode: "index", intersect: false },
+            stacked: false,
+            scales: {
+                x: { ticks: { color: "#9ca3af" }, grid: { color:"#1f2937" } },
+                y: {
+                    type: "linear",
+                    position: "left",
+                    title: { display: true, text: "Qty (Lot)", color:"#e5e7eb" },
+                    ticks: { color:"#9ca3af" },
+                    grid: { color:"#111827" }
+                },
+                y1: {
+                    type: "linear",
+                    position: "right",
+                    title: { display: true, text: "Price", color:"#e5e7eb" },
+                    ticks: { color:"#9ca3af" },
+                    grid: { drawOnChartArea: false, color:"#111827" }
+                }
+            }
+        }
+    });
+}
+
 // ===== CHART: DOMINANT BROKER + PRICE =====
 function renderDominantBrokerChart(rows) {
     const ctx = document.getElementById("chartBrokerDom").getContext("2d");
@@ -481,8 +934,8 @@ function renderDominantBrokerChart(rows) {
 
     const brokerSet = new Set();
     sorted.forEach(r => {
-        brokerSet.add(r.BC);
-        brokerSet.add(r.SC);
+        if (r.BC) brokerSet.add(r.BC);
+        if (r.SC) brokerSet.add(r.SC);
     });
 
     const brokers = Array.from(brokerSet);
@@ -497,27 +950,21 @@ function renderDominantBrokerChart(rows) {
     times.forEach((t, idx) => {
         brokers.forEach(b => cum[b][idx] = lastCum[b]);
         sorted.filter(r => r.time === t).forEach(r => {
-            lastCum[r.BC] += r.qty;
-            lastCum[r.SC] -= r.qty;
+            if (r.BC) lastCum[r.BC] += r.qty;
+            if (r.SC) lastCum[r.SC] -= r.qty;
         });
         brokers.forEach(b => cum[b][idx] = lastCum[b]);
     });
 
-    // activity score fallback (previous behavior)
     const activity = brokers.map(b => ({
         broker: b,
         score: Math.max(...cum[b].map(v => Math.abs(v)))
     })).sort((a,b)=>b.score - a.score);
 
-    // decide which brokers to show:
-    let shownBrokers = [];
-    if (selectedBrokers && selectedBrokers.length) {
-        // keep only those present in cum (unknowns will be shown with zeros)
-        shownBrokers = Array.from(new Set(selectedBrokers));
-    } else {
-        // fallback previous top activity (5)
-        shownBrokers = activity.slice(0, 5).map(a => a.broker);
-    }
+    const topN = activity.slice(0, 5).map(a => a.broker);
+
+    // If user selected brokers (chips) use them, otherwise use topN fallback
+    const shownBrokers = (selectedBrokers && selectedBrokers.length) ? Array.from(new Set(selectedBrokers)) : topN;
 
     const datasets = shownBrokers.map(b => {
         const col = getBrokerColor(b);
@@ -585,318 +1032,26 @@ function renderDominantBrokerChart(rows) {
     });
 }
 
-// ===== HAKA / HAKI DETECTION =====
-function detectHakaHaki(rows) {
-    if (!Array.isArray(rows)) return;
-    // group rows per time
-    const byTime = {};
-    rows.forEach(r => {
-        if (!byTime[r.time]) byTime[r.time] = [];
-        byTime[r.time].push(r);
-    });
-
-    Object.values(byTime).forEach(group => {
-        // count occurrences per broker on BC and SC
-        const countBC = {};
-        const countSC = {};
-        group.forEach(r => {
-            if (r.BC) countBC[r.BC] = (countBC[r.BC] || 0) + 1;
-            if (r.SC) countSC[r.SC] = (countSC[r.SC] || 0) + 1;
-        });
-
-        // brokers present on both sides in this second
-        const bcBrokers = new Set(Object.keys(countBC));
-        const scBrokers = new Set(Object.keys(countSC));
-        const crossBrokers = new Set([...bcBrokers].filter(b => scBrokers.has(b)));
-
-        group.forEach(r => {
-            const isHaka = !!(r.BC && countBC[r.BC] > 1);
-            const isHaki = !!(r.SC && countSC[r.SC] > 1);
-            const isCross = crossBrokers.size > 0 && (crossBrokers.has(r.BC) || crossBrokers.has(r.SC));
-
-            r.haka = isHaka;
-            r.haki = isHaki;
-            r.cross = isCross;
-
-            if (isCross) r.tag = "Cross / Haka-Haki";
-            else if (isHaka) r.tag = "Haka (Buy cluster)";
-            else if (isHaki) r.tag = "Haki (Sell cluster)";
-            else r.tag = "-";
-        });
-    });
-}
-
-// ===== AGGREGATION HELPERS (fix: add buildTimeStats & buildBrokerSummary) =====
-function buildTimeStats(rows) {
-    const byTime = {};
-    rows.forEach(r => {
-        if (!byTime[r.time]) byTime[r.time] = { qty: 0, value: 0 };
-        const v = (r.qty || 0) * (r.price || 0) * 100;
-        byTime[r.time].qty += (r.qty || 0);
-        byTime[r.time].value += v;
-    });
-
-    const times = Object.keys(byTime).sort((a,b) => timeToSec(a) - timeToSec(b));
-    const prices = [];
-    const volumes = [];
-
-    times.forEach(t => {
-        const g = byTime[t];
-        volumes.push(g.qty);
-        // VWAP per time: total value / (qty * 100)  (reverse of value = qty * price * 100)
-        prices.push(g.qty ? (g.value / (g.qty * 100)) : null);
-    });
-
-    return { times, prices, volumes };
-}
-
-function buildBrokerSummary(rows) {
-    const map = {};
-    rows.forEach(r => {
-        const v = (r.qty || 0) * (r.price || 0) * 100;
-        if (r.BC) {
-            if (!map[r.BC]) map[r.BC] = { broker: r.BC, buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0 };
-            map[r.BC].buyQty += (r.qty || 0);
-            map[r.BC].buyVal += v;
-        }
-        if (r.SC) {
-            if (!map[r.SC]) map[r.SC] = { broker: r.SC, buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0 };
-            map[r.SC].sellQty += (r.qty || 0);
-            map[r.SC].sellVal += v;
-        }
-    });
-
-    const list = Object.values(map).map(s => ({
-        broker: s.broker,
-        buyQty: s.buyQty,
-        sellQty: s.sellQty,
-        buyVal: s.buyVal,
-        sellVal: s.sellVal,
-        netQty: s.buyQty - s.sellQty,
-        netVal: s.buyVal - s.sellVal
-    }));
-
-    // sort by absolute net value (largest movers first)
-    list.sort((a,b) => Math.abs(b.netVal) - Math.abs(a.netVal));
-    return list;
-}
-
-// ===== RENDER / UI HELPERS (restored) =====
-
-// Debounced selection summary
-function scheduleSelectionSummaryUpdate() {
-    if (selectionTimer) clearTimeout(selectionTimer);
-    selectionTimer = setTimeout(updateSelectionSummary, 120);
-}
-
-function updateSelectionSummary() {
-    const sel = document.querySelectorAll('#resultTable tbody tr.selected-row');
-    if (!sel || sel.length === 0) {
-        document.getElementById('selectionSummary').style.display = 'none';
-        return;
-    }
-    let totalQty = 0, totalVal = 0;
-    sel.forEach(tr => {
-        totalQty += Number(tr.dataset.qty) || 0;
-        totalVal += Number(tr.dataset.value) || 0;
-    });
-    const el = document.getElementById('selectionSummary');
-    el.innerHTML = `<b>Selected</b><br>Qty: ${formatNumber(totalQty)}<br>Value: ${formatIdr(totalVal)}`;
-    el.style.display = 'block';
-}
-
-// Render time chart (volume + price)
-function renderTimeChart(rows) {
-    const ctx = document.getElementById('chartTime').getContext('2d');
-    const ts = buildTimeStats(rows || globalRows || []);
-    if (chartTimeObj) chartTimeObj.destroy();
-    chartTimeObj = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ts.times,
-            datasets: [
-                {
-                    type: 'bar',
-                    label: 'Qty (Lot)',
-                    data: ts.volumes,
-                    backgroundColor: '#3b82f6',
-                    yAxisID: 'y'
-                },
-                {
-                    type: 'line',
-                    label: 'Price (VWAP)',
-                    data: ts.prices,
-                    borderColor: '#f9fafb',
-                    backgroundColor: '#f9fafb',
-                    yAxisID: 'y1',
-                    fill: false,
-                    tension: 0.25
-                }
-            ]
-        },
-        options: {
-            plugins: { legend: { labels: { color:"#e5e7eb" } } },
-            scales: {
-                x: { ticks:{ color:"#9ca3af" }, grid:{ color:"#1f2937" } },
-                y: { position:'left', title:{ display:true, text:'Qty (Lot)', color:"#e5e7eb" }, ticks:{ color:"#9ca3af" }, grid:{ color:"#111827" } },
-                y1: { position:'right', title:{ display:true, text:'Price', color:"#e5e7eb" }, ticks:{ color:"#9ca3af" }, grid:{ drawOnChartArea:false } }
-            }
-        }
-    });
-}
-
-// Render broker summary table
-function renderBrokerSummary(list) {
-    const table = document.getElementById('summaryTable');
-    const thead = table.querySelector('thead tr#summaryHeader');
-    const tbody = table.querySelector('tbody');
-    thead.innerHTML = '';
-    tbody.innerHTML = '';
-
-    if (!Array.isArray(list) || list.length === 0) {
-        thead.innerHTML = '<th>Broker</th><th>No data</th>';
-        return;
-    }
-
-    // header
-    if (summaryMode === 'gross') {
-        thead.innerHTML = '<th>Broker</th><th>Buy Qty</th><th>Buy Val</th><th>Sell Qty</th><th>Sell Val</th><th>Net Qty</th><th>Net Val</th>';
-        list.forEach(r => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td style="font-weight:700;">${r.broker}</td>
-                            <td>${formatNumber(r.buyQty)}</td>
-                            <td>${formatIdr(r.buyVal)}</td>
-                            <td>${formatNumber(r.sellQty)}</td>
-                            <td>${formatIdr(r.sellVal)}</td>
-                            <td>${formatNumber(r.netQty)}</td>
-                            <td>${formatIdr(r.netVal)}</td>`;
-            tbody.appendChild(tr);
-        });
-    } else {
-        // net mode
-        thead.innerHTML = '<th>Broker</th><th>Net Qty</th><th>Net Val</th>';
-        list.forEach(r => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td style="font-weight:700;">${r.broker}</td>
-                            <td>${formatNumber(r.netQty)}</td>
-                            <td>${formatIdr(r.netVal)}</td>`;
-            tbody.appendChild(tr);
-        });
-    }
-}
-
-// Render main transaction table with filters and group recalculation
-function renderTable() {
-    if (!Array.isArray(globalRows)) return;
-    const tbody = document.querySelector('#resultTable tbody');
-    tbody.innerHTML = '';
-
-    // apply filters
-    let filtered = [...globalRows];
-
-    // Lot filter
-    const lotFilter = (document.getElementById('lotFilter') || {}).value || '';
-    if (lotFilter.trim()) {
-        const f = lotFilter.trim();
-        if (f.startsWith('>') || f.startsWith('<') || f.startsWith('=')) {
-            const op = f[0];
-            const num = parseFloat(f.slice(1));
-            if (!isNaN(num)) {
-                filtered = filtered.filter(r => {
-                    if (op === '>') return r.qty > num;
-                    if (op === '<') return r.qty < num;
-                    return r.qty === num;
-                });
-            }
-        } else {
-            const num = parseFloat(f);
-            if (!isNaN(num)) filtered = filtered.filter(r => r.qty === num);
-        }
-    }
-
-    // Broker filter (BC/SC)
-    const brokerFilter = ((document.getElementById('brokerFilter') || {}).value || '').trim().toUpperCase();
-    if (brokerFilter) {
-        filtered = filtered.filter(r => ((r.BC||'').toUpperCase().includes(brokerFilter) || (r.SC||'').toUpperCase().includes(brokerFilter)));
-    }
-
-    // time filters
-    const st = (document.getElementById('startTimeFilter') || {}).value;
-    const et = (document.getElementById('endTimeFilter') || {}).value;
-    if (st) {
-        const ssec = timeToSec(st);
-        filtered = filtered.filter(r => timeToSec(r.time) >= ssec);
-    }
-    if (et) {
-        const esec = timeToSec(et);
-        filtered = filtered.filter(r => timeToSec(r.time) <= esec);
-    }
-
-    // Manual time range (HH:MM:SS - HH:MM:SS)
-    const manualTime = (document.getElementById('timeFilter') || {}).value || '';
-    if (manualTime.includes('-')) {
-        const [start, end] = manualTime.split('-').map(t => t.trim());
-        if (start && end) {
-            const startSec = timeToSec(start);
-            const endSec = timeToSec(end);
-            filtered = filtered.filter(r => {
-                const sec = timeToSec(r.time);
-                return sec >= startSec && sec <= endSec;
-            });
-        }
-    }
-
-    // update table
-    tbody.innerHTML = '';
-    filtered.forEach(r => {
-        const tr = document.createElement('tr');
-        tr.dataset.qty = r.qty;
-        tr.dataset.value = (r.qty * r.price * 100);
-        tr.innerHTML = `<td>${r.time}</td>
-                        <td>${r.stock}</td>
-                        <td>${formatNumber(r.price)}</td>
-                        <td>${formatNumber(r.qty)}</td>
-                        <td>${formatIdr(r.value)}</td>
-                        <td>${formatIdr(r.groupValue)}</td>
-                        <td>${r.BT}</td>
-                        <td>${r.BC}</td>
-                        <td>${r.SC}</td>
-                        <td>${r.ST}</td>
-                        <td>${r.tag}</td>`;
-        tbody.appendChild(tr);
-    });
-
-    // re-render summary if needed
-    if (summaryMode === "gross" && globalBrokerSummary) {
-        renderBrokerSummary(globalBrokerSummary);
-    } else if (summaryMode === "net" && globalBrokerSummary) {
-        renderBrokerSummary(globalBrokerSummary);
-    }
-}
-
-// helper: convert "HH:MM:SS" or "HH:MM" to seconds
+// ===== HELPERS =====
 function timeToSec(t) {
-    if (!t) return 0;
-    const parts = String(t).trim().split(':').map(p => parseInt(p, 10) || 0);
-    if (parts.length === 1) return parts[0];
-    if (parts.length === 2) return parts[0] * 3600 + parts[1] * 60;
-    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    const [h,m,s] = t.split(":").map(Number);
+    return h*3600 + m*60 + s;
 }
 
-// format integer/float with thousands separator
-function formatNumber(n) {
-    if (n === null || n === undefined || n === '') return '';
-    const num = Number(n);
-    if (isNaN(num)) return String(n);
-    return num.toLocaleString('en-US');
+function formatNumber(x){
+    if (x === null || x === undefined) return "-";
+    return x.toLocaleString("en-US");
 }
 
-// format currency (IDR)
+function formatMillion(v){
+    if (v === null || v === undefined) return "-";
+    const million = v / 1_000_000;
+    return million.toFixed(1) + " M";
+}
+
 function formatIdr(v) {
-    if (v === null || v === undefined || v === '') return '';
-    const num = Number(v);
-    if (isNaN(num)) return String(v);
-    return 'Rp ' + Math.round(num).toLocaleString('en-US');
+    if (v === null || v === undefined) return "-";
+    return Math.round(v).toLocaleString('id-ID') + ' IDR';
 }
 </script>
 
