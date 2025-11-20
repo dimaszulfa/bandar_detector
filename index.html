@@ -873,6 +873,31 @@ function renderTable() {
         renderBrokerSummary(globalBrokerSummary);
     }
 }
+
+// helper: convert "HH:MM:SS" or "HH:MM" to seconds
+function timeToSec(t) {
+    if (!t) return 0;
+    const parts = String(t).trim().split(':').map(p => parseInt(p, 10) || 0);
+    if (parts.length === 1) return parts[0];
+    if (parts.length === 2) return parts[0] * 3600 + parts[1] * 60;
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+}
+
+// format integer/float with thousands separator
+function formatNumber(n) {
+    if (n === null || n === undefined || n === '') return '';
+    const num = Number(n);
+    if (isNaN(num)) return String(n);
+    return num.toLocaleString('en-US');
+}
+
+// format currency (IDR)
+function formatIdr(v) {
+    if (v === null || v === undefined || v === '') return '';
+    const num = Number(v);
+    if (isNaN(num)) return String(v);
+    return 'Rp ' + Math.round(num).toLocaleString('en-US');
+}
 </script>
 
 </body>
