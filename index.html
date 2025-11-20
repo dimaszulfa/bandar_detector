@@ -653,7 +653,7 @@ function renderTable(data = globalRows) {
 
             tr.addEventListener("mouseover", function() {
                 if (!isMouseDown) return;
-                if this.dataset.total === "1") return;
+                if (this.dataset.total === "1") return;
                 didDrag = true;
                 this.classList.add("selected-row");
             });
@@ -812,7 +812,7 @@ function renderDominantBrokerChart(rows) {
     const sorted = [...rows].sort((a,b) => timeToSec(a.time) - timeToSec(b.time));
 
     const brokerSet = new Set();
-    sorted.forEach r => {
+    sorted.forEach(r => {
         brokerSet.add(r.BC);
         brokerSet.add(r.SC);
     });
