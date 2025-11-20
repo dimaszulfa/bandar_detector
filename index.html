@@ -626,6 +626,61 @@ function detectHakaHaki(rows) {
     });
 }
 
+// ===== AGGREGATION HELPERS (fix: add buildTimeStats & buildBrokerSummary) =====
+function buildTimeStats(rows) {
+    const byTime = {};
+    rows.forEach(r => {
+        if (!byTime[r.time]) byTime[r.time] = { qty: 0, value: 0 };
+        const v = (r.qty || 0) * (r.price || 0) * 100;
+        byTime[r.time].qty += (r.qty || 0);
+        byTime[r.time].value += v;
+    });
+
+    const times = Object.keys(byTime).sort((a,b) => timeToSec(a) - timeToSec(b));
+    const prices = [];
+    const volumes = [];
+
+    times.forEach(t => {
+        const g = byTime[t];
+        volumes.push(g.qty);
+        // VWAP per time: total value / (qty * 100)  (reverse of value = qty * price * 100)
+        prices.push(g.qty ? (g.value / (g.qty * 100)) : null);
+    });
+
+    return { times, prices, volumes };
+}
+
+function buildBrokerSummary(rows) {
+    const map = {};
+    rows.forEach(r => {
+        const v = (r.qty || 0) * (r.price || 0) * 100;
+        if (r.BC) {
+            if (!map[r.BC]) map[r.BC] = { broker: r.BC, buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0 };
+            map[r.BC].buyQty += (r.qty || 0);
+            map[r.BC].buyVal += v;
+        }
+        if (r.SC) {
+            if (!map[r.SC]) map[r.SC] = { broker: r.SC, buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0 };
+            map[r.SC].sellQty += (r.qty || 0);
+            map[r.SC].sellVal += v;
+        }
+    });
+
+    const list = Object.values(map).map(s => ({
+        broker: s.broker,
+        buyQty: s.buyQty,
+        sellQty: s.sellQty,
+        buyVal: s.buyVal,
+        sellVal: s.sellVal,
+        netQty: s.buyQty - s.sellQty,
+        netVal: s.buyVal - s.sellVal
+    }));
+
+    // sort by absolute net value (largest movers first)
+    list.sort((a,b) => Math.abs(b.netVal) - Math.abs(a.netVal));
+    return list;
+}
+
 // ===== HELPERS =====
 function timeToSec(t) {
     const [h,m,s] = t.split(":").map(Number);
