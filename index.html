@@ -57,6 +57,15 @@
         z-index: 5;
     }
 
+    /* Freeze header for result table */
+    #resultTable thead th {
+        position: sticky;
+        top: 0;
+        background: #111827;
+        color: #f9fafb;
+        z-index: 6;
+    }
+
     .haka { background: #0b3b6b; }
     .haki { background: #5a1f2d; }
     .cross { background: #3b255c; }
@@ -593,15 +602,34 @@ function renderTable(data = globalRows) {
         const group = byTime[time];
         const rowspan = group.length;
 
-        const gv = formatIdr(group[0].groupValue);
-        const gt = group[0].groupTag;
+        // Recompute group value & tag based on the CURRENT filtered group
+        const totalValue = group.reduce((sum, rr) => sum + (rr.qty * rr.price * 100), 0);
+        const countBC = {}, countSC = {};
+        group.forEach(rr => {
+            countBC[rr.BC] = (countBC[rr.BC] || 0) + 1;
+            countSC[rr.SC] = (countSC[rr.SC] || 0) + 1;
+        });
+
+        let tag = "-";
+        let isHaka = false, isHaki = false, isCross = false;
+        Object.keys(countBC).forEach(b => { if (countBC[b] > 1) isHaka = true; });
+        Object.keys(countSC).forEach(b => { if (countSC[b] > 1) isHaki = true; });
+        Object.keys(countBC).forEach(b => { if (countBC[b] && countSC[b]) isCross = true; });
+
+        if (isCross) tag = "Cross / Haka-Haki";
+        else if (isHaka) tag = "Haka (Buy cluster)";
+        else if (isHaki) tag = "Haki (Sell cluster)";
+
+        const gv = formatIdr(totalValue);
+        const gt = tag;
 
         group.forEach((r, idx) => {
             const tr = document.createElement("tr");
 
-            if (r.cross) tr.classList.add("cross");
-            else if (r.haka) tr.classList.add("haka");
-            else if (r.haki) tr.classList.add("haki");
+            // Apply group-based class (so coloring follows filtered group)
+            if (isCross) tr.classList.add("cross");
+            else if (isHaka) tr.classList.add("haka");
+            else if (isHaki) tr.classList.add("haki");
 
             const value = r.qty * r.price * 100;
 
@@ -625,7 +653,7 @@ function renderTable(data = globalRows) {
 
             tr.addEventListener("mouseover", function() {
                 if (!isMouseDown) return;
-                if (this.dataset.total === "1") return;
+                if this.dataset.total === "1") return;
                 didDrag = true;
                 this.classList.add("selected-row");
             });
@@ -666,7 +694,7 @@ function renderTable(data = globalRows) {
                 <td style="background:${bcColor};color:#f9fafb;font-weight:bold;">${r.BC}</td>
                 <td style="background:${scColor};color:#f9fafb;font-weight:bold;">${r.SC}</td>
                 <td style="background:${stBg};">${r.ST}</td>
-                <td>${r.tag}</td>
+                <td>${gt}</td>
             `;
 
             tbody.appendChild(tr);
@@ -784,7 +812,7 @@ function renderDominantBrokerChart(rows) {
     const sorted = [...rows].sort((a,b) => timeToSec(a.time) - timeToSec(b.time));
 
     const brokerSet = new Set();
-    sorted.forEach(r => {
+    sorted.forEach r => {
         brokerSet.add(r.BC);
         brokerSet.add(r.SC);
     });
