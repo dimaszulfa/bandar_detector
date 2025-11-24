@@ -515,45 +515,50 @@ function detectHakaHaki(rows) {
         byTime[r.time].push(r);
     });
 
-    const clusterValue = {};
-    const clusterTag   = {};
-
     Object.keys(byTime).forEach(time => {
         const group = byTime[time];
 
-        const totalValue = group.reduce((sum, r) => sum + (r.qty * r.price * 100), 0);
+        let value = group.reduce((s, r) => s + r.qty * r.price * 100, 0);
 
-        const countBC = {}, countSC = {};
+        // mapping BC dan SC
+        const BCmap = {};
+        const SCmap = {};
+
         group.forEach(r => {
-            countBC[r.BC] = (countBC[r.BC] || 0) + 1;
-            countSC[r.SC] = (countSC[r.SC] || 0) + 1;
+            BCmap[r.BC] = (BCmap[r.BC] || 0) + r.qty;
+            SCmap[r.SC] = (SCmap[r.SC] || 0) + r.qty;
         });
 
+        const uniqueBC = Object.keys(BCmap).length;
+        const uniqueSC = Object.keys(SCmap).length;
+
+        const maxBC = Object.entries(BCmap).sort((a,b)=>b[1]-a[1])[0];
+        const maxSC = Object.entries(SCmap).sort((a,b)=>b[1]-a[1])[0];
+
         let tag = "-";
-        let isHaka = false, isHaki = false, isCross = false;
+        let type = "normal";
 
-        Object.keys(countBC).forEach(b => { if (countBC[b] > 1) isHaka = true; });
-        Object.keys(countSC).forEach(b => { if (countSC[b] > 1) isHaki = true; });
-        Object.keys(countBC).forEach(b => { if (countBC[b] && countSC[b]) isCross = true; });
+        if (maxBC && maxSC && maxBC[0] === maxSC[0]) {
+            tag = "Cross / Haka-Haki";
+            type = "cross";
+        } else if (uniqueSC === 1 && uniqueBC > 1) {
+            tag = "Haki (Sell cluster)";
+            type = "haki";
+        } else if (uniqueBC === 1 && uniqueSC > 1) {
+            tag = "Haka (Buy cluster)";
+            type = "haka";
+        }
 
-        if (isCross) tag = "Cross / Haka-Haki";
-        else if (isHaka) tag = "Haka (Buy cluster)";
-        else if (isHaki) tag = "Haki (Sell cluster)";
-
-        clusterValue[time] = totalValue;
-        clusterTag[time]   = tag;
-    });
-
-    rows.forEach(r => {
-        r.groupValue = clusterValue[r.time];
-        r.groupTag   = clusterTag[r.time];
-
-        r.cross = r.groupTag.includes("Cross");
-        r.haka  = r.groupTag.includes("Haka (Buy");
-        r.haki  = r.groupTag.includes("Haki (Sell");
-        r.tag   = r.groupTag;
+        group.forEach(r => {
+            r.groupValue = value;
+            r.tag = tag;
+            r.haka = (type === "haka");
+            r.haki = (type === "haki");
+            r.cross = (type === "cross");
+        });
     });
 }
+
 
 // ===== TIME STATS UNTUK CHART =====
 function buildTimeStats(rows){
